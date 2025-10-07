@@ -1,17 +1,30 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+// middleware.ts
+// middleware.ts
+import { NextResponse } from 'next/server';
+export default function middleware() { return NextResponse.next(); }
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'] };
 
-const isPublic = createRouteMatcher([
-  '/',
+/*import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+
+const isPublicRoute = createRouteMatcher([
+  '/',                  // home
   '/sign-in(.*)',
   '/sign-up(.*)',
-  '/courses(.*)',
-  '/api/health',
+  '/courses(.*)',       // both /courses and /courses/...
+    '/api/health',
 ]);
 
 export default clerkMiddleware((auth, req) => {
-  if (!isPublic(req)) auth().protect();
+  // Protect everything that's NOT public
+  if (!isPublicRoute(req)) {
+    auth().protect();
+  }
 });
 
+// Run on all non-static routes (includes /api/*)
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)'],
-};
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)',
+  ],
+};*/
+
