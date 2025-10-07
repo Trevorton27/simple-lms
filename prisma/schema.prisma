@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  locale    String   @default("en")
+  timeZone  String   @default("UTC")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles        UserRole[]
+  ownedCourses Course[]     @relation("CourseOwner")
+  enrollments  Enrollment[]
+  progress     Progress[]
+  answers      Answer[]
+  auditLogs    AuditLog[]
+
+  @@index([email])
+  @@index([isActive])
+}
+
+model Role {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  users UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model Course {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  description String?   @db.Text
+  price       Decimal?  @db.Decimal(10, 2)
+  visibility  String    @default("PRIVATE")
+  publishedAt DateTime?
+  ownerId     String
+  owner       User      @relation("CourseOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  modules     Module[]
+  enrollments Enrollment[]
+  schedules   Schedule[]
+
+  @@index([slug])
+  @@index([ownerId])
+  @@index([visibility])
+  @@index([publishedAt])
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title     String
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lessons Lesson[]
+
+  @@unique([courseId, order])
+  @@index([courseId])
+}
+
+model Lesson {
+  id            String   @id @default(cuid())
+  moduleId      String
+  module        Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title         String
+  order         Int
+  content       String?  @db.Text
+  videoUrl      String?
+  isFreePreview Boolean  @default(false)
+  durationSec   Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  quizzes  Quiz[]
+  progress Progress[]
+
+  @@unique([moduleId, order])
+  @@index([moduleId])
+}
+
+model Quiz {
+  id        String   @id @default(cuid())
+  lessonId  String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  questions Question[]
+
+  @@index([lessonId])
+}
+
+model Question {
+  id        String   @id @default(cuid())
+  quizId    String
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  prompt    String   @db.Text
+  type      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  choices Choice[]
+  answers Answer[]
+
+  @@index([quizId])
+}
+
+model Choice {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  answers Answer[]
+
+  @@index([questionId])
+}
+
+model Answer {
+  id          String   @id @default(cuid())
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  choiceId    String?
+  choice      Choice?  @relation(fields: [choiceId], references: [id], onDelete: SetNull)
+  text        String?  @db.Text
+  isCorrect   Boolean
+  submittedAt DateTime @default(now())
+
+  @@unique([questionId, userId])
+  @@index([questionId, userId])
+  @@index([userId])
+}
+
+model Enrollment {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  status     String   @default("ENROLLED")
+  enrolledAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+}
+
+model Progress {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId       String
+  lesson         Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  secondsWatched Int       @default(0)
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+}
+
+model Schedule {
+  id             String   @id @default(cuid())
+  courseId       String
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?  @db.Text
+  startsAt       DateTime
+  endsAt         DateTime
+  location       String?
+  isOnline       Boolean  @default(false)
+  meetingUrl     String?
+  recurrenceRule String?
+  visibility     String   @default("ENROLLED_ONLY")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([courseId])
+  @@index([startsAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  actor       User     @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  action      String
+  entity      String
+  entityId    String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
