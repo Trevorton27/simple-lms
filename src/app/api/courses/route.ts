@@ -35,7 +35,11 @@ export async function POST(req: NextRequest) {
 
     const course = await db.course.create({
       data: {
-        ...data,
+        title: data.title,
+        slug: data.slug,
+        description: data.description,
+        price: data.price,
+        visibility: data.visibility,
         ownerId: clerkUser.id,
       },
     });
