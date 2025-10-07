@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
