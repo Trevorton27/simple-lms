@@ -11,11 +11,11 @@ const isPublicRoute = createRouteMatcher([
 export default clerkMiddleware((auth, req) => {
   // Public routes don't need protection
   if (isPublicRoute(req)) {
-    return;
+     // Protect all other routes
+  auth().protect();
   }
 
-  // Protect all other routes
-  auth().protect();
+
 });
 
 export const config = {
