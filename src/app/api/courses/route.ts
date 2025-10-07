@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { currentUser } from '@clerk/nextjs/server';
 
 const createCourseSchema = z.object({
   title: z.string().min(1).max(200),
@@ -13,9 +12,16 @@ const createCourseSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // For demo purposes, use first user or create one
+    let user = await db.user.findFirst();
+    if (!user) {
+      user = await db.user.create({
+        data: {
+          id: 'demo-user',
+          email: 'demo@example.com',
+          name: 'Demo User',
+        },
+      });
     }
 
     const body = await req.json();
@@ -40,14 +46,14 @@ export async function POST(req: NextRequest) {
         description: data.description,
         price: data.price,
         visibility: data.visibility,
-        ownerId: clerkUser.id,
+        ownerId: user.id,
       },
     });
 
     // Create audit log
     await db.auditLog.create({
       data: {
-        actorUserId: clerkUser.id,
+        actorUserId: user.id,
         action: 'CREATE',
         entity: 'Course',
         entityId: course.id,
@@ -77,27 +83,18 @@ export async function GET(req: NextRequest) {
 
     const where: any = {};
 
-    // Public access: only show PUBLIC and published courses
-    const clerkUser = await currentUser();
-    
-    if (!clerkUser) {
-      where.visibility = 'PUBLIC';
-      where.publishedAt = { not: null };
-    } else {
-      // Authenticated users can see their own courses + public
-      where.OR = [
-        { visibility: 'PUBLIC', publishedAt: { not: null } },
-        { ownerId: clerkUser.id },
-      ];
-    }
+    // Show all public and published courses
+    where.visibility = 'PUBLIC';
+    where.publishedAt = { not: null };
 
     if (visibility) {
       where.visibility = visibility;
     }
 
-    if (ownerId && clerkUser && ownerId === clerkUser.id) {
+    if (ownerId) {
       where.ownerId = ownerId;
-      delete where.OR; // Remove OR condition if filtering by owner
+      delete where.visibility;
+      delete where.publishedAt;
     }
 
     if (search) {

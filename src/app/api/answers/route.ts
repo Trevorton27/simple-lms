@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { currentUser } from '@clerk/nextjs/server';
 
 const submitAnswerSchema = z.object({
   questionId: z.string(),
@@ -11,9 +10,10 @@ const submitAnswerSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Demo mode: Use first user in database
+    const user = await db.user.findFirst();
+    if (!user) {
+      return NextResponse.json({ error: 'No user found in database' }, { status: 500 });
     }
 
     const body = await req.json();
@@ -64,12 +64,12 @@ export async function POST(req: NextRequest) {
       where: {
         questionId_userId: {
           questionId: data.questionId,
-          userId: clerkUser.id,
+          userId: user.id,
         },
       },
       create: {
         questionId: data.questionId,
-        userId: clerkUser.id,
+        userId: user.id,
         choiceId: data.choiceId,
         text: data.text,
         isCorrect,
@@ -100,9 +100,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Demo mode: Use first user in database
+    const user = await db.user.findFirst();
+    if (!user) {
+      return NextResponse.json({ error: 'No user found in database' }, { status: 500 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -134,7 +135,7 @@ export async function GET(req: NextRequest) {
     // Get user's answers for this quiz
     const answers = await db.answer.findMany({
       where: {
-        userId: clerkUser.id,
+        userId: user.id,
         question: {
           quizId,
         },

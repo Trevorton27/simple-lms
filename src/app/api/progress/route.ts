@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { currentUser } from '@clerk/nextjs/server';
 
 const upsertProgressSchema = z.object({
   lessonId: z.string(),
@@ -11,9 +10,10 @@ const upsertProgressSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Demo mode: Use first user in database
+    const user = await db.user.findFirst();
+    if (!user) {
+      return NextResponse.json({ error: 'No user found in database' }, { status: 500 });
     }
 
     const body = await req.json();
@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
     const progress = await db.progress.upsert({
       where: {
         userId_lessonId: {
-          userId: clerkUser.id,
+          userId: user.id,
           lessonId: data.lessonId,
         },
       },
       create: {
-        userId: clerkUser.id,
+        userId: user.id,
         lessonId: data.lessonId,
         secondsWatched: data.secondsWatched,
         completedAt: isCompleted ? new Date() : null,
@@ -69,9 +69,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Demo mode: Use first user in database
+    const user = await db.user.findFirst();
+    if (!user) {
+      return NextResponse.json({ error: 'No user found in database' }, { status: 500 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -83,7 +84,7 @@ export async function GET(req: NextRequest) {
       const progress = await db.progress.findUnique({
         where: {
           userId_lessonId: {
-            userId: clerkUser.id,
+            userId: user.id,
             lessonId,
           },
         },
@@ -96,7 +97,7 @@ export async function GET(req: NextRequest) {
       // Get all progress for a course
       const progress = await db.progress.findMany({
         where: {
-          userId: clerkUser.id,
+          userId: user.id,
           lesson: {
             module: {
               courseId,
@@ -123,7 +124,7 @@ export async function GET(req: NextRequest) {
 
     // Get all user progress
     const progress = await db.progress.findMany({
-      where: { userId: clerkUser.id },
+      where: { userId: user.id },
       include: {
         lesson: {
           select: {

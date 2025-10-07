@@ -1,21 +1,12 @@
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export default async function InstructorDashboard() {
-  const clerkUser = await currentUser();
-
-  if (!clerkUser) {
-    redirect('/sign-in');
-  }
-
-  // Get or create user
-  let user = await db.user.findUnique({
-    where: { id: clerkUser.id },
+  // For demo purposes, use first user
+  let user = await db.user.findFirst({
     include: {
       roles: {
         include: { role: true },
@@ -24,16 +15,18 @@ export default async function InstructorDashboard() {
   });
 
   if (!user) {
-    redirect('/dashboard');
-  }
-
-  // Check if user has instructor or admin role
-  const hasInstructorAccess = user.roles.some(
-    (ur) => ur.role.name === 'INSTRUCTOR' || ur.role.name === 'ADMIN'
-  );
-
-  if (!hasInstructorAccess) {
-    redirect('/dashboard');
+    user = await db.user.create({
+      data: {
+        id: 'demo-instructor',
+        email: 'instructor@example.com',
+        name: 'Demo Instructor',
+      },
+      include: {
+        roles: {
+          include: { role: true },
+        },
+      },
+    });
   }
 
   // Get instructor's courses

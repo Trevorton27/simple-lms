@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { currentUser } from '@clerk/nextjs/server';
 
 export const runtime = 'nodejs';
 
@@ -11,9 +10,10 @@ const createEnrollmentSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Demo mode: Use first user in database
+    const user = await db.user.findFirst();
+    if (!user) {
+      return NextResponse.json({ error: 'No user found in database' }, { status: 500 });
     }
 
     const body = await req.json();
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const existing = await db.enrollment.findUnique({
       where: {
         userId_courseId: {
-          userId: clerkUser.id,
+          userId: user.id,
           courseId: data.courseId,
         },
       },
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
       await db.auditLog.create({
         data: {
-          actorUserId: clerkUser.id,
+          actorUserId: user.id,
           action: 'UPDATE',
           entity: 'Enrollment',
           entityId: reenrolled.id,
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     // Create enrollment
     const enrollment = await db.enrollment.create({
       data: {
-        userId: clerkUser.id,
+        userId: user.id,
         courseId: data.courseId,
         status: 'ENROLLED',
       },
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     // Create audit log
     await db.auditLog.create({
       data: {
-        actorUserId: clerkUser.id,
+        actorUserId: user.id,
         action: 'CREATE',
         entity: 'Enrollment',
         entityId: enrollment.id,
@@ -94,28 +94,17 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Demo mode: Use first user in database
+    const user = await db.user.findFirst();
+    if (!user) {
+      return NextResponse.json({ error: 'No user found in database' }, { status: 500 });
     }
 
     const { searchParams } = new URL(req.url);
     const courseId = searchParams.get('courseId');
 
     if (courseId) {
-      // Get enrollments for a specific course (instructor/admin only)
-      const course = await db.course.findUnique({
-        where: { id: courseId },
-        select: { ownerId: true },
-      });
-
-      if (!course || course.ownerId !== clerkUser.id) {
-        return NextResponse.json(
-          { error: 'Forbidden: Not the course owner' },
-          { status: 403 }
-        );
-      }
-
+      // Get enrollments for a specific course
       const enrollments = await db.enrollment.findMany({
         where: {
           courseId,
@@ -140,7 +129,7 @@ export async function GET(req: NextRequest) {
     // Get user's own enrollments
     const enrollments = await db.enrollment.findMany({
       where: {
-        userId: clerkUser.id,
+        userId: user.id,
         status: 'ENROLLED',
       },
       include: {

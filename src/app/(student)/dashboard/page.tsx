@@ -1,29 +1,19 @@
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const clerkUser = await currentUser();
-  
-  if (!clerkUser) {
-    redirect('/sign-in');
-  }
-
-  // Get or create user in database
-  let user = await db.user.findUnique({
-    where: { id: clerkUser.id },
-  });
+  // For demo purposes, use first user or create a default one
+  let user = await db.user.findFirst();
 
   if (!user) {
     user = await db.user.create({
       data: {
-        id: clerkUser.id,
-        email: clerkUser.emailAddresses[0]?.emailAddress || '',
-        name: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'User',
+        id: 'demo-user',
+        email: 'demo@example.com',
+        name: 'Demo User',
       },
     });
   }

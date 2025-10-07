@@ -1,12 +1,8 @@
-import { auth } from '@clerk/nextjs/server';
 import { db } from './db';
 
 export async function getCurrentUser() {
-  const { userId } = await auth();
-  if (!userId) return null;
-
-  let user = await db.user.findUnique({
-    where: { id: userId },
+  // For demo purposes, return first user or create one
+  let user = await db.user.findFirst({
     include: {
       roles: {
         include: { role: true },
@@ -17,8 +13,9 @@ export async function getCurrentUser() {
   if (!user) {
     user = await db.user.create({
       data: {
-        id: userId,
-        email: '',
+        id: 'demo-user',
+        email: 'demo@example.com',
+        name: 'Demo User',
         isActive: true,
       },
       include: {
