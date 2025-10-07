@@ -3,15 +3,63 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { currentUser } from '@clerk/nextjs/server';
 
+export const runtime = 'nodejs';
+
 const createEnrollmentSchema = z.object({
-  courseId: z.string(),
+  courseId: z.string().min(1),
 });
 
 export async function POST(req: NextRequest) {
   try {
     const clerkUser = await currentUser();
     if (!clerkUser) {
-      return NextResponse.json(enrollment);
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const data = createEnrollmentSchema.parse(body);
+
+    // Check if course exists and is published
+    const course = await db.course.findUnique({ where: { id: data.courseId } });
+    if (!course) {
+      return NextResponse.json({ error: 'Course not found' }, { status: 404 });
+    }
+    if (!course.publishedAt) {
+      return NextResponse.json({ error: 'Course is not published' }, { status: 400 });
+    }
+
+    // Check if already enrolled
+    const existing = await db.enrollment.findUnique({
+      where: {
+        userId_courseId: {
+          userId: clerkUser.id,
+          courseId: data.courseId,
+        },
+      },
+    });
+
+    if (existing) {
+      if (existing.status === 'ENROLLED') {
+        return NextResponse.json({ error: 'Already enrolled' }, { status: 400 });
+      }
+
+      // Re-enroll if previously cancelled/refunded
+      const reenrolled = await db.enrollment.update({
+        where: { id: existing.id },
+        data: { status: 'ENROLLED', enrolledAt: new Date() },
+      });
+
+      await db.auditLog.create({
+        data: {
+          actorUserId: clerkUser.id,
+          action: 'UPDATE',
+          entity: 'Enrollment',
+          entityId: reenrolled.id,
+          metadata: { courseId: data.courseId, previousStatus: existing.status, newStatus: 'ENROLLED' },
+        },
+      });
+
+      return NextResponse.json(reenrolled, { status: 200 });
     }
 
     // Create enrollment
@@ -40,10 +88,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });
     }
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -86,9 +131,7 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-        orderBy: {
-          enrolledAt: 'desc',
-        },
+        orderBy: { enrolledAt: 'desc' },
       });
 
       return NextResponse.json(enrollments);
@@ -104,77 +147,18 @@ export async function GET(req: NextRequest) {
         course: {
           include: {
             owner: {
-              select: {
-                id: true,
-                name: true,
-                avatarUrl: true,
-              },
+              select: { id: true, name: true, avatarUrl: true },
             },
-            _count: {
-              select: {
-                modules: true,
-              },
-            },
+            _count: { select: { modules: true } },
           },
         },
       },
-      orderBy: {
-        enrolledAt: 'desc',
-      },
+      orderBy: { enrolledAt: 'desc' },
     });
 
     return NextResponse.json(enrollments);
   } catch (error) {
     console.error('Error fetching enrollments:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const body = await req.json();
-    const data = createEnrollmentSchema.parse(body);
-
-    // Check if course exists and is published
-    const course = await db.course.findUnique({
-      where: { id: data.courseId },
-    });
-
-    if (!course) {
-      return NextResponse.json({ error: 'Course not found' }, { status: 404 });
-    }
-
-    if (!course.publishedAt) {
-      return NextResponse.json(
-        { error: 'Course is not published' },
-        { status: 400 }
-      );
-    }
-
-    // Check if already enrolled
-    const existing = await db.enrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: clerkUser.id,
-          courseId: data.courseId,
-        },
-      },
-    });
-
-    if (existing) {
-      if (existing.status === 'ENROLLED') {
-        return NextResponse.json(
-          { error: 'Already enrolled' },
-          { status: 400 }
-        );
-      }
-      
-      // Re-enroll if previously cancelled/refunded
-      const enrollment = await db.enrollment.update({
-        where: { id: existing.id },
-        data: { status: 'ENROLLED', enrolledAt: new Date() },
-      });
-
-      return NextResponse.json
+}
