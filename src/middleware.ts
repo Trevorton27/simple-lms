@@ -1,5 +1,10 @@
 // middleware.ts
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+// middleware.ts
+import { NextResponse } from 'next/server';
+export default function middleware() { return NextResponse.next(); }
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'] };
+
+/*import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 const isPublicRoute = createRouteMatcher([
   '/',                  // home
@@ -20,4 +25,4 @@ export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)',
   ],
-};
+};*/
