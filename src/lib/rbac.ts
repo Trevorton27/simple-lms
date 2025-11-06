@@ -1,4 +1,5 @@
 import { db } from './db';
+import { auth } from '@clerk/nextjs/server';
 
 export type Permission =
   | 'course:create'
@@ -33,7 +34,14 @@ export type Permission =
   | 'file:view:enrolled'
   | 'file:view:public'
   | 'audit:read'
-  | 'user:manage';
+  | 'user:manage'
+  | 'blog:create'
+  | 'blog:update:own'
+  | 'blog:update:any'
+  | 'blog:delete:own'
+  | 'blog:delete:any'
+  | 'blog:publish:own'
+  | 'blog:publish:any';
 
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ADMIN: [
@@ -67,6 +75,10 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'file:view:public',
     'audit:read',
     'user:manage',
+    'blog:create',
+    'blog:update:any',
+    'blog:delete:any',
+    'blog:publish:any',
   ],
   INSTRUCTOR: [
     'course:create',
@@ -95,6 +107,10 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'file:upload:instructor',
     'file:view:enrolled',
     'file:view:public',
+    'blog:create',
+    'blog:update:own',
+    'blog:delete:own',
+    'blog:publish:own',
   ],
   STUDENT: [
     'enrollment:read:self',
@@ -108,7 +124,32 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ],
 };
 
+/**
+ * Get user roles from database or Clerk organization
+ * Prioritizes Clerk organization roles if available
+ */
 export async function getUserRoles(userId: string): Promise<string[]> {
+  // First, try to get roles from Clerk organization
+  const { orgRole } = await auth();
+
+  if (orgRole) {
+    // Map Clerk org role to database role
+    const roleMapping: Record<string, string> = {
+      'org:admin': 'ADMIN',
+      'org:instructor': 'INSTRUCTOR',
+      'org:student': 'STUDENT',
+      'admin': 'ADMIN',
+      'instructor': 'INSTRUCTOR',
+      'student': 'STUDENT',
+    };
+
+    const mappedRole = roleMapping[orgRole.toLowerCase()];
+    if (mappedRole) {
+      return [mappedRole];
+    }
+  }
+
+  // Fallback to database roles
   const userRoles = await db.userRole.findMany({
     where: { userId },
     include: { role: true },
@@ -205,4 +246,29 @@ export async function canViewLesson(
 
   // Check enrollment
   return isEnrolled(userId, lesson.module.course.id);
+}
+
+export async function canManageBlogPost(
+  userId: string,
+  postId: string
+): Promise<boolean> {
+  const roles = await getUserRoles(userId);
+  if (roles.includes('ADMIN')) return true;
+
+  const post = await db.blogPost.findUnique({
+    where: { id: postId },
+    select: { authorId: true },
+  });
+
+  return post?.authorId === userId && roles.includes('INSTRUCTOR');
+}
+
+export async function requireBlogPostOwnership(
+  userId: string,
+  postId: string
+): Promise<void> {
+  const can = await canManageBlogPost(userId, postId);
+  if (!can) {
+    throw new Error('Forbidden: Not the blog post author or admin');
+  }
 }

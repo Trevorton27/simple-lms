@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -24,6 +25,7 @@ model User {
   progress     Progress[]
   answers      Answer[]
   auditLogs    AuditLog[]
+  blogPosts    BlogPost[]
 
   @@index([email])
   @@index([isActive])
@@ -229,4 +231,53 @@ model AuditLog {
   @@index([actorUserId])
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+model BlogPost {
+  id           String    @id @default(cuid())
+  slug         String    @unique
+  titleEn      String
+  titleJa      String
+  contentEn    String    @db.Text
+  contentJa    String    @db.Text
+  excerptEn    String?   @db.Text
+  excerptJa    String?   @db.Text
+  coverImage   String?
+  mediaGallery Json?
+  publishDate  DateTime?
+  isPublished  Boolean   @default(false)
+  authorId     String
+  author       User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tags BlogPostTag[]
+
+  @@index([slug])
+  @@index([authorId])
+  @@index([isPublished])
+  @@index([publishDate])
+}
+
+model BlogTag {
+  id        String   @id @default(cuid())
+  nameEn    String   @unique
+  nameJa    String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  posts BlogPostTag[]
+
+  @@index([slug])
+}
+
+model BlogPostTag {
+  postId String
+  tagId  String
+  post   BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    BlogTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([postId])
+  @@index([tagId])
 }

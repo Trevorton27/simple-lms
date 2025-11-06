@@ -1,10 +1,21 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
+import { currentUser } from '@clerk/nextjs/server';
+import { SignInButton, SignUpButton, UserButton, OrganizationSwitcher } from '@clerk/nextjs';
+import { getUserRoles } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export default async function CoursesPage() {
+  const clerkUser = await currentUser();
+
+  // Check if user is admin
+  let isAdmin = false;
+  if (clerkUser) {
+    const roles = await getUserRoles(clerkUser.id);
+    isAdmin = roles.includes('ADMIN');
+  }
   const courses = await db.course.findMany({
     where: {
       visibility: 'PUBLIC',
@@ -39,10 +50,44 @@ export default async function CoursesPage() {
             <Link href="/" className="text-2xl font-bold text-blue-600">
               LMS Platform
             </Link>
-            <div className="flex gap-4">
-              <Link href="/dashboard" className="text-gray-700 hover:text-blue-600">
-                Dashboard
+            <div className="flex gap-4 items-center">
+              <Link href="/blog" className="text-gray-700 hover:text-blue-600">
+                Blog
               </Link>
+              {clerkUser ? (
+                <>
+                  <OrganizationSwitcher
+                    hidePersonal={false}
+                    afterCreateOrganizationUrl="/dashboard"
+                    afterSelectOrganizationUrl="/dashboard"
+                  />
+                  {isAdmin && (
+                    <Link
+                      href="/admin"
+                      className="text-purple-600 hover:text-purple-700 font-semibold"
+                    >
+                      Admin
+                    </Link>
+                  )}
+                  <Link href="/dashboard" className="text-gray-700 hover:text-blue-600">
+                    Dashboard
+                  </Link>
+                  <UserButton afterSignOutUrl="/" />
+                </>
+              ) : (
+                <>
+                  <SignInButton mode="modal">
+                    <button className="text-gray-700 hover:text-blue-600 font-medium">
+                      Sign In
+                    </button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium">
+                      Sign Up
+                    </button>
+                  </SignUpButton>
+                </>
+              )}
             </div>
           </div>
         </div>

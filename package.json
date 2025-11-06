@@ -12,13 +12,22 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "tsx scripts/seed.ts",
+    "make-admin": "tsx scripts/make-admin.ts",
+    "check-user": "tsx scripts/check-user.ts",
+    "create-admin-user": "tsx scripts/create-admin-user.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.33.3",
     "@prisma/client": "^6.16.3",
     "next": "15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
+    "svix": "^1.76.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
