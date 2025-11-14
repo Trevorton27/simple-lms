@@ -19,13 +19,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  roles        UserRole[]
-  ownedCourses Course[]     @relation("CourseOwner")
-  enrollments  Enrollment[]
-  progress     Progress[]
-  answers      Answer[]
-  auditLogs    AuditLog[]
-  blogPosts    BlogPost[]
+  roles              UserRole[]
+  ownedCourses       Course[]            @relation("CourseOwner")
+  enrollments        Enrollment[]
+  progress           Progress[]
+  answers            Answer[]
+  auditLogs          AuditLog[]
+  blogPosts          BlogPost[]
+  masteryProgress    MasteryProgress[]
+  attempts           Attempt[]
+  tutorConversations TutorConversation[]
 
   @@index([email])
   @@index([isActive])
@@ -280,4 +283,139 @@ model BlogPostTag {
   @@id([postId, tagId])
   @@index([postId])
   @@index([tagId])
+}
+
+// ============================================================================
+// Interactive Coding Tutor Models
+// ============================================================================
+
+model Task {
+  id                  String   @id @default(cuid())
+  title               String
+  description         String?  @db.Text
+  prompt              String   @db.Text
+  difficulty          Int      @default(1)
+  prerequisites       String[]
+
+  scaffold            Json
+  solution            Json
+  tests               Json
+  hints               Json
+
+  detailedDescription String?  @db.Text
+  realWorldContext    String?  @db.Text
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  concepts            ConceptTask[]
+  attempts            Attempt[]
+
+  @@index([difficulty])
+}
+
+model Concept {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String?  @db.Text
+  difficulty    Int      @default(1)
+  prerequisites String[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tasks         ConceptTask[]
+  progress      MasteryProgress[]
+
+  @@index([name])
+}
+
+model ConceptTask {
+  conceptId String
+  taskId    String
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([conceptId, taskId])
+  @@index([conceptId])
+  @@index([taskId])
+}
+
+model MasteryProgress {
+  id            String    @id @default(cuid())
+  userId        String
+  conceptId     String
+
+  mastery       Int       @default(800)
+  attempts      Int       @default(0)
+  successes     Int       @default(0)
+  lastAttemptAt DateTime?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept       Concept   @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conceptId])
+  @@index([userId])
+  @@index([conceptId])
+  @@index([mastery])
+}
+
+model Attempt {
+  id           String   @id @default(cuid())
+  userId       String
+  taskId       String
+
+  code         Json
+  passed       Boolean
+  passedTests  String[]
+  failedTests  String[]
+
+  hintsUsed    Int      @default(0)
+  maxHintLevel Int      @default(0)
+  timeSpentMs  Int      @default(0)
+
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([taskId])
+  @@index([passed])
+  @@index([createdAt])
+}
+
+model TutorConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  TutorMessage[]
+
+  @@index([userId])
+  @@index([taskId])
+}
+
+model TutorMessage {
+  id             String            @id @default(cuid())
+  conversationId String
+  role           String
+  text           String            @db.Text
+
+  hintLevel      Int?
+  conceptTag     String?
+  actions        Json?
+
+  createdAt      DateTime          @default(now())
+
+  conversation   TutorConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
 }

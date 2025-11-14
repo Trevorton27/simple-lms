@@ -1,212 +1,217 @@
-import { Webhook } from 'svix';
-import { headers } from 'next/headers';
-import { WebhookEvent } from '@clerk/nextjs/server';
-import { db } from '@/lib/db';
+// src/app/api/webhooks/clerk/route.ts
+import { headers } from "next/headers";
+import { Webhook } from "svix";
+import type { WebhookEvent } from "@clerk/nextjs/server";
+import { db } from "@/lib/db";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
-
   if (!WEBHOOK_SECRET) {
-    throw new Error('Please add CLERK_WEBHOOK_SECRET to .env');
+    throw new Error("Please add CLERK_WEBHOOK_SECRET to .env");
   }
 
-  // Get the headers
-  const headerPayload = await headers();
-  const svix_id = headerPayload.get('svix-id');
-  const svix_timestamp = headerPayload.get('svix-timestamp');
-  const svix_signature = headerPayload.get('svix-signature');
-
-  if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response('Error: Missing svix headers', {
-      status: 400,
-    });
+  // 1) Required Svix headers
+  const hs = await headers();
+  const svixId = hs.get("svix-id");
+  const svixTimestamp = hs.get("svix-timestamp");
+  const svixSignature = hs.get("svix-signature");
+  if (!svixId || !svixTimestamp || !svixSignature) {
+    return new Response("Error: Missing svix headers", { status: 400 });
   }
 
-  // Get the body
-  const payload = await req.json();
-  const body = JSON.stringify(payload);
+  // 2) RAW body for signature verification — do NOT use req.json() here
+  const raw = await req.text();
 
-  // Create a new Svix instance
+  // 3) Verify signature against RAW body
   const wh = new Webhook(WEBHOOK_SECRET);
-
   let evt: WebhookEvent;
-
   try {
-    evt = wh.verify(body, {
-      'svix-id': svix_id,
-      'svix-timestamp': svix_timestamp,
-      'svix-signature': svix_signature,
+    evt = wh.verify(raw, {
+      "svix-id": svixId,
+      "svix-timestamp": svixTimestamp,
+      "svix-signature": svixSignature,
     }) as WebhookEvent;
   } catch (err) {
-    console.error('Error verifying webhook:', err);
-    return new Response('Error: Verification failed', {
-      status: 400,
-    });
+    console.error("[clerk-webhook] Invalid signature", err);
+    return new Response("Error: Verification failed", { status: 400 });
+  }
+
+  // 4) Now it's safe to parse JSON (helps for robust field access)
+  let json: any;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    json = evt; // fallback; Clerk events are already typed
   }
 
   const eventType = evt.type;
+  console.log("[clerk-webhook] event:", eventType);
 
-  if (eventType === 'user.created') {
-    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
+  // Helper: extract a safe email
+  function getPrimaryEmail(data: any): string | null {
+    const list = Array.isArray(data?.email_addresses) ? data.email_addresses : [];
+    const primaryId = data?.primary_email_address_id;
+    if (primaryId) {
+      const match = list.find((e: any) => e.id === primaryId);
+      if (match?.email_address) return match.email_address;
+    }
+    // fallback to first if present
+    return list[0]?.email_address ?? null;
+  }
 
-    // Create user in database
-    const user = await db.user.create({
-      data: {
-        id,
-        email: email_addresses[0].email_address,
-        name: `${first_name || ''} ${last_name || ''}`.trim() || null,
-        avatarUrl: image_url || null,
-      },
-    });
+  try {
+    if (eventType === "user.created") {
+      const { id, first_name, last_name, image_url } = evt.data as any;
+      const email = getPrimaryEmail(evt.data);
 
-    // Assign default STUDENT role
-    const studentRole = await db.role.findUnique({
-      where: { name: 'STUDENT' },
-    });
-
-    if (studentRole) {
-      await db.userRole.create({
-        data: {
-          userId: user.id,
-          roleId: studentRole.id,
+      // Use upsert for idempotency (Clerk may retry)
+      await db.user.upsert({
+        where: { id },
+        update: {
+          email,
+          name: `${first_name || ""} ${last_name || ""}`.trim() || null,
+          avatarUrl: image_url || null,
+          isActive: true,
+        },
+        create: {
+          id,
+          email,
+          name: `${first_name || ""} ${last_name || ""}`.trim() || null,
+          avatarUrl: image_url || null,
+          isActive: true,
         },
       });
+
+      // Ensure default STUDENT role if none exists
+      const studentRole = await db.role.findUnique({ where: { name: "STUDENT" } });
+      if (studentRole) {
+        const existing = await db.userRole.findFirst({ where: { userId: id } });
+        if (!existing) {
+          await db.userRole.create({ data: { userId: id, roleId: studentRole.id } });
+        }
+      }
+      console.log("User upserted:", id);
     }
 
-    console.log('User created:', user.id);
-  }
+    if (eventType === "user.updated") {
+      const { id, first_name, last_name, image_url } = evt.data as any;
+      const email = getPrimaryEmail(evt.data);
 
-  if (eventType === 'user.updated') {
-    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
-
-    await db.user.update({
-      where: { id },
-      data: {
-        email: email_addresses[0].email_address,
-        name: `${first_name || ''} ${last_name || ''}`.trim() || null,
-        avatarUrl: image_url || null,
-      },
-    });
-
-    console.log('User updated:', id);
-  }
-
-  if (eventType === 'user.deleted') {
-    const { id } = evt.data;
-
-    if (id) {
       await db.user.update({
         where: { id },
-        data: { isActive: false },
+        data: {
+          email,
+          name: `${first_name || ""} ${last_name || ""}`.trim() || null,
+          avatarUrl: image_url || null,
+        },
       });
 
-      console.log('User soft deleted:', id);
+      console.log("User updated:", id);
     }
+
+    if (eventType === "user.deleted") {
+      const { id } = evt.data as any;
+      if (id) {
+        await db.user.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        console.log("User soft deleted:", id);
+      }
+    }
+
+    // Organization membership events — be defensive about shapes
+    if (
+      eventType === "organizationMembership.created" ||
+      eventType === "organizationMembership.updated"
+    ) {
+      const data: any = evt.data;
+      const roleRaw: string | undefined = data?.role;
+      const userId: string | undefined =
+        data?.public_user_data?.user_id ?? data?.publicUserData?.userId ?? data?.user_id;
+
+      if (userId && roleRaw) {
+        await syncOrganizationRole(userId, roleRaw);
+        console.log(`Organization membership ${eventType}:`, { userId, role: roleRaw });
+      } else {
+        console.warn("Org membership payload missing userId/role");
+      }
+    }
+
+    if (eventType === "organizationMembership.deleted") {
+      const data: any = evt.data;
+      const userId: string | undefined =
+        data?.public_user_data?.user_id ?? data?.publicUserData?.userId ?? data?.user_id;
+
+      if (userId) {
+        await resetToStudentRole(userId);
+        console.log("Organization membership deleted:", userId);
+      }
+    }
+  } catch (err) {
+    // Any DB error bubbles here -> return 500 so Clerk can retry
+    console.error("[clerk-webhook] Handler error:", err);
+    return new Response("Webhook handler error", { status: 500 });
   }
 
-  // Handle organization membership events
-  if (eventType === 'organizationMembership.created' || eventType === 'organizationMembership.updated') {
-    const { organization, public_user_data, role } = evt.data;
-    const userId = public_user_data.user_id;
-
-    console.log(`Organization membership ${eventType}:`, { userId, role });
-
-    // Sync organization role to database
-    await syncOrganizationRole(userId, role);
-  }
-
-  if (eventType === 'organizationMembership.deleted') {
-    const { public_user_data } = evt.data;
-    const userId = public_user_data.user_id;
-
-    console.log('Organization membership deleted:', userId);
-
-    // Remove all roles except STUDENT
-    await resetToStudentRole(userId);
-  }
-
-  return new Response('Webhook processed', { status: 200 });
+  return new Response("Webhook processed", { status: 200 });
 }
 
-/**
- * Sync organization role from Clerk to database
- */
+// === helpers ===
 async function syncOrganizationRole(userId: string, clerkRole: string) {
-  // Map Clerk org roles to database roles
   const roleMapping: Record<string, string> = {
-    'org:admin': 'ADMIN',
-    'org:instructor': 'INSTRUCTOR',
-    'org:student': 'STUDENT',
-    // Also support without org: prefix
-    'admin': 'ADMIN',
-    'instructor': 'INSTRUCTOR',
-    'student': 'STUDENT',
+    "org:admin": "ADMIN",
+    "org:instructor": "INSTRUCTOR",
+    "org:student": "STUDENT",
+    admin: "ADMIN",
+    instructor: "INSTRUCTOR",
+    student: "STUDENT",
   };
 
   const dbRoleName = roleMapping[clerkRole.toLowerCase()];
-
   if (!dbRoleName) {
     console.warn(`Unknown Clerk role: ${clerkRole}`);
     return;
   }
 
-  // Ensure user exists
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
-    console.warn(`User not found: ${userId}`);
+    console.warn(`User not found for role sync: ${userId}`);
     return;
   }
 
-  // Get the role from database
-  const role = await db.role.findUnique({
-    where: { name: dbRoleName },
-  });
-
+  const role = await db.role.findUnique({ where: { name: dbRoleName } });
   if (!role) {
-    console.warn(`Role not found in database: ${dbRoleName}`);
+    console.warn(`Role not found in DB: ${dbRoleName}`);
     return;
   }
 
-  // Remove existing roles
-  await db.userRole.deleteMany({
-    where: { userId },
-  });
-
-  // Assign new role
-  await db.userRole.create({
-    data: {
-      userId,
-      roleId: role.id,
-    },
-  });
-
+  await db.userRole.deleteMany({ where: { userId } });
+  await db.userRole.create({ data: { userId, roleId: role.id } });
   console.log(`Synced role for user ${userId}: ${dbRoleName}`);
 }
 
-/**
- * Reset user to student role (when removed from organization)
- */
 async function resetToStudentRole(userId: string) {
-  const studentRole = await db.role.findUnique({
-    where: { name: 'STUDENT' },
-  });
+  const studentRole = await db.role.findUnique({ where: { name: "STUDENT" } });
+  if (!studentRole) return;
 
-  if (!studentRole) {
-    return;
-  }
+  await db.userRole.deleteMany({ where: { userId } });
+  await db.userRole.create({ data: { userId, roleId: studentRole.id } });
+  console.log(`Reset user ${userId} to STUDENT role`);
+}
 
-  // Remove all roles
-  await db.userRole.deleteMany({
-    where: { userId },
-  });
-
-  // Assign student role
-  await db.userRole.create({
-    data: {
-      userId,
-      roleId: studentRole.id,
+// Optional CORS preflight (not required for Clerk -> server)
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers":
+        "Content-Type, svix-id, svix-timestamp, svix-signature",
     },
   });
-
-  console.log(`Reset user ${userId} to STUDENT role`);
 }

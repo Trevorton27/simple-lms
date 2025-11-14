@@ -1,5 +1,5 @@
-// Node-only Prisma client (no Neon adapter)
-// Works with Vercel Postgres when DATABASE_URL is set.
+// Prisma client for Neon serverless database
+// Optimized for connection pooling with Neon
 
 import { PrismaClient } from '@prisma/client';
 
@@ -8,7 +8,8 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const db =
   globalForPrisma.prisma ??
   new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+    // Reduce logging to only show errors, not connection warnings
+    log: process.env.NODE_ENV === 'development' ? ['error'] : ['error'],
     datasources: {
       db: {
         url: process.env.DATABASE_URL,
@@ -20,9 +21,5 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = db;
 }
 
-// Handle disconnection on process exit
-if (process.env.NODE_ENV === 'development') {
-  process.on('beforeExit', async () => {
-    await db.$disconnect();
-  });
-}
+// Don't disconnect in development - let Next.js handle it
+// Disconnecting prematurely causes "Server has closed the connection" errors with server actions

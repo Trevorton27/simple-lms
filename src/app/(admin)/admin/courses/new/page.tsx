@@ -10,8 +10,13 @@ export default async function AdminNewCoursePage() {
     redirect('/sign-in');
   }
 
-  const user = await db.user.findUnique({
-    where: { id: clerkUser.id },
+  const user = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: clerkUser.id },
+        { email: clerkUser.emailAddresses[0]?.emailAddress }
+      ]
+    },
     include: {
       roles: {
         include: { role: true },
@@ -19,7 +24,11 @@ export default async function AdminNewCoursePage() {
     },
   });
 
-  const isAdmin = user?.roles.some((ur) => ur.role.name === 'ADMIN');
+  if (!user) {
+    redirect('/dashboard');
+  }
+
+  const isAdmin = user.roles.some((ur) => ur.role.name === 'ADMIN');
   if (!isAdmin) {
     redirect('/dashboard');
   }

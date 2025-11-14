@@ -1,28 +1,33 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const isPublicRoute = createRouteMatcher([
-  '/',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-  '/courses(.*)',
-  '/blog(.*)',
-  '/api/blog(.*)',
-  '/api/health(.*)',
-  '/api/webhooks(.*)',
-]);
+export default clerkMiddleware((auth, req) => {
+  // Hard-skip webhooks so body/headers are untouched
+  if (req.nextUrl.pathname.startsWith("/api/webhooks")) {
+    return;
+  }
 
-export default clerkMiddleware((auth, request) => {
-  // Protect all non-public routes
-  if (!isPublicRoute(request)) {
+  const isPublicRoute = createRouteMatcher([
+    "/",
+    "/sign-in(.*)",
+    "/sign-up(.*)",
+    "/courses(.*)",
+    "/blog(.*)",
+    "/api/blog(.*)",
+    "/api/health(.*)",
+    // ⛔️ do NOT include /api/webhooks here
+  ]);
+
+  if (!isPublicRoute(req)) {
     auth.protect();
   }
 });
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
+    // same static-skipper you had
     '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    // Always run for API routes
-    '/(api|trpc)(.*)',
+    // Broadly run on API/TRPC (no capture groups, no lookaheads)
+    '/api/:path*',
+    '/trpc/:path*',
   ],
 };

@@ -14,8 +14,13 @@ export default async function AdminBlogPage() {
   }
 
   // Get user with roles
-  const user = await db.user.findUnique({
-    where: { id: clerkUser.id },
+  const user = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: clerkUser.id },
+        { email: clerkUser.emailAddresses[0]?.emailAddress }
+      ]
+    },
     include: {
       roles: {
         include: { role: true },
@@ -64,8 +69,13 @@ export default async function AdminBlogPage() {
       throw new Error('Unauthorized');
     }
 
-    const user = await db.user.findUnique({
-      where: { id: clerkUser.id },
+    const user = await db.user.findFirst({
+      where: {
+        OR: [
+          { id: clerkUser.id },
+          { email: clerkUser.emailAddresses[0]?.emailAddress }
+        ]
+      },
       include: {
         roles: {
           include: { role: true },

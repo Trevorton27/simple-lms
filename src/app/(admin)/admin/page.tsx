@@ -9,15 +9,22 @@ export default async function AdminDashboard() {
 
   console.log('=== ADMIN PAGE DEBUG ===');
   console.log('Clerk User ID:', clerkUser?.id);
+  console.log('Clerk User ID Type:', typeof clerkUser?.id);
+  console.log('Clerk User ID Length:', clerkUser?.id?.length);
   console.log('Clerk User Email:', clerkUser?.emailAddresses?.[0]?.emailAddress);
 
   if (!clerkUser) {
     redirect('/sign-in');
   }
 
-  // Get or create user
-  let user = await db.user.findUnique({
-    where: { id: clerkUser.id },
+  // Get user with a single query using findFirst (more reliable with Neon)
+  let user = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: clerkUser.id },
+        { email: clerkUser.emailAddresses[0]?.emailAddress }
+      ]
+    },
     include: {
       roles: {
         include: { role: true },
@@ -28,7 +35,13 @@ export default async function AdminDashboard() {
   console.log('Database User Found:', user ? 'YES' : 'NO');
   if (user) {
     console.log('User Email:', user.email);
+    console.log('User ID from DB:', user.id);
     console.log('User Roles:', user.roles.map((ur) => ur.role.name));
+    console.log('ID Match:', user.id === clerkUser.id ? 'YES' : 'NO');
+  } else {
+    console.log('Tried to find user with:');
+    console.log('  - Clerk ID:', clerkUser.id);
+    console.log('  - Email:', clerkUser.emailAddresses[0]?.emailAddress);
   }
 
   if (!user) {
@@ -135,10 +148,10 @@ export default async function AdminDashboard() {
           <h2 className="text-2xl font-semibold mb-4">Quick Actions</h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Link
-              href="/admin/users/new"
+              href="/admin/users"
               className="bg-blue-600 text-white p-6 rounded-lg hover:bg-blue-700 text-center font-semibold"
             >
-              + Create User
+              Manage Users
             </Link>
             <Link
               href="/admin/courses/new"
@@ -157,6 +170,12 @@ export default async function AdminDashboard() {
               className="bg-purple-600 text-white p-6 rounded-lg hover:bg-purple-700 text-center font-semibold"
             >
               Manage Blog
+            </Link>
+            <Link
+              href="/admin/api-tester"
+              className="bg-teal-600 text-white p-6 rounded-lg hover:bg-teal-700 text-center font-semibold"
+            >
+              API Tester
             </Link>
           </div>
         </div>
